@@ -328,6 +328,25 @@ function onNetUp(){
     }catch(e){}
     if(n>0)saveProdsCache();
   },5000);
+  /* 一次性清理：删除无图商品（旧空间迁移时图片数据已丢，保留占位图商品没意义）。
+     求购帖(kind=buy)天然无图不删；执行一次后写标记不再运行 */
+  setTimeout(()=>{
+    if(!mq||!mq.connected)return;
+    if(localStorage.getItem('cu_purged_nopic'))return;
+    const dead=(state.products||[]).filter(p=>p&&p.id&&p.kind!=='buy'&&!(p.img&&p.img.length));
+    localStorage.setItem('cu_purged_nopic','1');
+    if(!dead.length)return;
+    dead.forEach(p=>{
+      try{
+        mq.publish(NS+'products/'+p.id,null,{qos:0,retain:true});
+        mirrorPublish(NS+'products/'+p.id,null,true);
+      }catch(e){}
+    });
+    state.products=state.products.filter(p=>p.kind==='buy'||(p.img&&p.img.length));
+    saveProdsCache();
+    renderGoods();
+    toast('已清理 '+dead.length+' 件无图商品，重新发布即可 ✅');
+  },6000);
   heartbeat();
 }
 function heartbeat(){if(state.me&&mq&&mq.connected)pub(NS+'presence/'+encodeURIComponent(state.me.name),{on:true,ts:Date.now()},true);}
@@ -2150,9 +2169,9 @@ $('#goMigrate').addEventListener('click',async()=>{
   }catch(e){migrating=false;toast('迁移失败，请重试');}
 });
 /* ---------- 版本公告 ---------- */
-const APP_VERSION='v5.46';
+const APP_VERSION='v5.47';
 const CHANGELOG=[
-  {v:'v5.46',d:'11-26',cur:true,t:'交易流程优化：确认后不再跳站点选择页、直接进入验货节点；收款码提前到验货时展示（先扫码付款再确认完成）；本地缓存图片保全加固'},
+  {v:'v5.47',d:'11-26',cur:true,t:'清理无图商品（图片数据在数据迁移中丢失，重新发布即可）；交易流程优化与收款码提前到验货节点同步生效'},
   {v:'v5.9.6',d:'11-20',t:'移除视频上传功能，上传只支持图片（最多 4 张），历史商品中的视频不再展示'},
   {v:'v5.9.5',d:'11-20',t:'频道导航平铺到首页（闲鱼样式）：一行排序/筛选频道 + 一排图标分类频道，点右侧箭头打开全部频道弹窗'},
   {v:'v5.9.4',d:'11-20',t:'首页搜索框新增下拉筛选频道面板：推荐/最新发布/热门商品排序，支持面交/可议价筛选，11 个商品大类一键筛选；首页标题改为「闲鹅校园二手APP」'},
