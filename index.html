@@ -129,8 +129,11 @@
       </div>
     </div>
   </div>
-  <!-- 首页吉祥物：抱箱子的鹅，固定在右下角（只在首页显示） -->
-  <img class="goose-mascot" id="gooseMascot" src="img/goose.png" alt="闲鹅吉祥物" draggable="false">
+  <!-- 首页吉祥物：抱箱子的鹅，固定在右下角（只在首页显示），浅橙圆底+点击说话 -->
+  <div class="goose-wrap" id="gooseWrap">
+    <div class="goose-bubble" id="gooseBubble"></div>
+    <img class="goose-mascot" id="gooseMascot" src="img/goose.png" alt="闲鹅吉祥物" draggable="false">
+  </div>
 </div>
 
 <!-- 搜索结果页：只有搜索框和搜索出的商品 -->
@@ -372,6 +375,10 @@
       <div class="card me-item" id="goSupport">
         <div class="mico" style="background:#FBE3DE;">💬</div>
         <div class="mt">客服反馈</div><span class="arrow">›</span>
+      </div>
+      <div class="card me-item" id="goQrCode">
+        <div class="mico" style="background:#E4EEF9;">💳</div>
+        <div class="mt">我的二维码</div><span class="arrow">›</span>
       </div>
     </div>
     <div class="btn btn-ghost logout-btn" id="logoutBtn">退出登录</div>
@@ -663,6 +670,33 @@
     <div class="pf-field"><label>个性签名</label><textarea id="pfBio" rows="2" maxlength="60" placeholder="写一句签名，让同学更了解你…"></textarea></div>
     <div class="btn btn-orange" id="pfSave" style="margin-top:16px;">保存资料</div>
     <input type="file" id="profFile" accept="image/*" hidden>
+  </div>
+</div>
+
+<!-- 我的收款码管理弹窗 -->
+<div class="overlay center-overlay" id="qrMgrOverlay">
+  <div class="prof-sheet">
+    <div class="ord-head"><b>我的收款码</b><div class="cs-close" id="qrMgrClose">✕</div></div>
+    <div style="font-size:11px;color:var(--text3);line-height:1.6;margin-bottom:10px;">上传你的收款码，买家验货确认后可扫码向你付款。支付宝、微信都可以传，只传一个就只展示一个。</div>
+    <div class="qr-slot">
+      <div class="qr-slot-label">🅰 支付宝收款码</div>
+      <div class="qr-box" id="qrAlipayBox"><img id="qrAlipayImg" style="display:none;"><span class="qr-add" id="qrAlipayAdd">＋ 上传二维码</span></div>
+    </div>
+    <div class="qr-slot">
+      <div class="qr-slot-label">🟢 微信收款码</div>
+      <div class="qr-box" id="qrWechatBox"><img id="qrWechatImg" style="display:none;"><span class="qr-add" id="qrWechatAdd">＋ 上传二维码</span></div>
+    </div>
+    <div class="btn btn-orange" id="qrSave" style="margin-top:14px;">保存收款码</div>
+    <input type="file" id="qrFileInput" accept="image/*" hidden>
+  </div>
+</div>
+
+<!-- 查看卖家收款码弹窗 -->
+<div class="overlay center-overlay" id="qrViewOverlay">
+  <div class="prof-sheet">
+    <div class="ord-head"><b>卖家收款码</b><div class="cs-close" id="qrViewClose">✕</div></div>
+    <div style="font-size:11px;color:var(--text3);margin-bottom:10px;">验货满意后扫码付款，付款后记得告知卖家 🦢</div>
+    <div id="qrViewBody"></div>
   </div>
 </div>
 
