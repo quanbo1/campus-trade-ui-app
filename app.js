@@ -199,10 +199,9 @@ function flushOutbox(){
   }
 }
 /* ---------- 镜像节点：所有保留消息同步写入三个总线节点，数据不再依赖单一节点 ---------- */
-/* 【已暂停跨节点同步】MIRROR_SYNC=false：数据只写当前节点，不同步到其他节点/镜像。
-   原因：多节点同时长连接（主节点+镜像+跨节点拉取）心跳多、易断线；且各版本数据互相串扰。
-   如需恢复：把 false 改回 true 即可，全部逻辑保留未删。 */
-const MIRROR_SYNC=false;
+/* 【已恢复跨节点同步】MIRROR_SYNC=true：主节点保留消息丢失时，自动从镜像节点拉回补种（商品防丢第二道防线）。
+   断线问题已由心跳优化解决；开启后商品/资料在三节点互为备份 */
+const MIRROR_SYNC=true;
 let mirrors=[];
 /* 演示商品墓碑：三节点发布空 retain，彻底删除 */
 const SEED_IDS=new Set((typeof SEED_PRODUCTS!=='undefined'?SEED_PRODUCTS:[]).map(p=>p.id));
@@ -2033,10 +2032,75 @@ function renderProfile(){
   /* 在线数据同步到总线，供他人主页展示 */
   publishActivity();
 }
+/* ---------- 首页小鹅点击说话 ---------- */
+const GOOSE_LINES=['来捡便宜啦！','闲置交给我，帮它找新家鹅','看看有没有你需要的宝贝鹅？','鹅鹅！今天捡漏了吗'];
+$('#gooseWrap').addEventListener('click',()=>{
+  const b=$('#gooseBubble');
+  b.textContent=GOOSE_LINES[Math.floor(Math.random()*GOOSE_LINES.length)];
+  b.classList.add('show');
+  clearTimeout(b._t);b._t=setTimeout(()=>b.classList.remove('show'),2200);
+});
+/* ---------- 我的收款码：上传保存到个人档案，买家验货确认后可查看 ---------- */
+let qrTmp={alipay:null,wechat:null},qrTarget=null;
+function renderQrMgr(){
+  const a=$('#qrAlipayImg'),w=$('#qrWechatImg');
+  const av=qrTmp.alipay,wv=qrTmp.wechat;
+  a.src=av||'';a.style.display=av?'':'none';$('#qrAlipayAdd').style.display=av?'none':'';
+  w.src=wv||'';w.style.display=wv?'':'none';$('#qrWechatAdd').style.display=wv?'none':'';
+}
+$('#goQrCode').addEventListener('click',()=>{
+  if(!state.me){toast('先登录才能设置收款码哦');return;}
+  const pf=state.profiles[state.me.name]||{};
+  qrTmp={alipay:pf.qrAlipay||null,wechat:pf.qrWechat||null};
+  renderQrMgr();
+  $('#qrMgrOverlay').classList.add('show');
+});
+$('#qrMgrClose').addEventListener('click',()=>$('#qrMgrOverlay').classList.remove('show'));
+$('#qrAlipayBox').addEventListener('click',()=>{qrTarget='alipay';$('#qrFileInput').click();});
+$('#qrWechatBox').addEventListener('click',()=>{qrTarget='wechat';$('#qrFileInput').click();});
+$('#qrFileInput').addEventListener('change',async e=>{
+  const f=e.target.files&&e.target.files[0];e.target.value='';
+  if(!f)return;
+  try{
+    const img=await compressImg(f);
+    qrTmp[qrTarget]=img;
+    renderQrMgr();
+    toast(qrTarget==='alipay'?'支付宝码已就绪':'微信码已就绪');
+  }catch(err){toast('图片读取失败，换一张试试');}
+});
+$('#qrSave').addEventListener('click',()=>{
+  if(!state.me)return;
+  const old=state.profiles[state.me.name]||{};
+  const pf={
+    nick:old.nick||state.me.name,gender:old.gender||'保密',bio:old.bio||'',av:old.av||'',
+    qrAlipay:qrTmp.alipay||null,qrWechat:qrTmp.wechat||null,ts:Date.now(),
+  };
+  const payload=JSON.stringify(pf);
+  if(payload.length>PAYLOAD_MAX){toast('二维码图片太大，请裁剪后重试');return;}
+  if(mq&&mq.connected){
+    mq.publish(NS+'profiles/'+encodeURIComponent(state.me.name),payload,{qos:0,retain:true});
+    mirrorPublish(NS+'profiles/'+encodeURIComponent(state.me.name),payload,true);
+    toast('收款码已保存，买家验货确认后可查看 ✅');
+  }else toast('网络未连接，已保存本地，恢复后自动同步');
+  state.profiles[state.me.name]=pf;
+  const saved=getStore('me')||{};saved.profile=pf;setStore('me',saved);
+  $('#qrMgrOverlay').classList.remove('show');
+});
+$('#qrViewClose').addEventListener('click',()=>$('#qrViewOverlay').classList.remove('show'));
+function openSellerQr(seller){
+  const pf=state.profiles[seller]||{};
+  const items=[];
+  if(pf.qrAlipay)items.push({t:'支付宝',src:pf.qrAlipay});
+  if(pf.qrWechat)items.push({t:'微信',src:pf.qrWechat});
+  const body=$('#qrViewBody');
+  if(!items.length){toast('卖家还没有上传收款码，可聊天中协商付款方式');return;}
+  body.innerHTML=items.map(x=>`<div class="qr-slot"><div class="qr-slot-label">${x.t}收款码</div><div class="qr-box" style="border-style:solid;background:#fff;"><img src="${x.src}"></div></div>`).join('');
+  $('#qrViewOverlay').classList.add('show');
+}
 /* ---------- 版本公告 ---------- */
-const APP_VERSION='v5.36';
+const APP_VERSION='v5.37';
 const CHANGELOG=[
-  {v:'v5.36',d:'11-25',cur:true,t:'商品防丢终极加固：所有商品自动存入本机持久缓存（刷新/重开页面秒显示），云端丢失自动用本机缓存补回；推荐排与分类图标精确左对齐'},
+  {v:'v5.37',d:'11-25',cur:true,t:'新增收款码：卖家在「我的」上传支付宝/微信收款码，买家验货确认后订单页可查看扫码付款；首页顶部布局收紧、小鹅会说话（浅橙圆底+点击气泡语录）；恢复镜像同步找回商品'},
   {v:'v5.9.6',d:'11-20',t:'移除视频上传功能，上传只支持图片（最多 4 张），历史商品中的视频不再展示'},
   {v:'v5.9.5',d:'11-20',t:'频道导航平铺到首页（闲鱼样式）：一行排序/筛选频道 + 一排图标分类频道，点右侧箭头打开全部频道弹窗'},
   {v:'v5.9.4',d:'11-20',t:'首页搜索框新增下拉筛选频道面板：推荐/最新发布/热门商品排序，支持面交/可议价筛选，11 个商品大类一键筛选；首页标题改为「闲鹅校园二手APP」'},
@@ -2821,8 +2885,8 @@ $('#pubSubmit').addEventListener('click',()=>{
 
 /* ---------- 订单状态 ---------- */
 /* 面交：确认面交地点 → 现场验货 → 交易完成；送货：下单 → 配送 → 收货验货 → 完成 */
-const STEP_TITLES_SELF=['已下单','确认面交地点','买卖双方现场验货','交易完成'];
-const STEP_TITLES_DELIVERY=['已下单','卖家备货配送','买家收货验货','交易完成'];
+const STEP_TITLES_SELF=['已下单','确认面交地点','买卖双方现场验货','买家已支付，交易完成'];
+const STEP_TITLES_DELIVERY=['已下单','卖家备货配送','买家收货验货','买家已支付，交易完成'];
 const orderSteps=o=>((o.mode||'self')==='delivery')?STEP_TITLES_DELIVERY:STEP_TITLES_SELF;
 function stName(o){
   const names=(o.mode||'self')==='delivery'
@@ -2879,15 +2943,20 @@ function renderOrder(){
     <div class="tc-row" style="border:none;font-size:10px;color:var(--text3);">💡 地点/地址可在聊天窗口协商，改完后在上方保存，双方同步可见</div>
   </div>`;
   const subDesc=isDelivery
-    ?['买家完成支付（含跑腿费），货款暂由平台担保','卖家备好货，送货至买家填写地址','买家收货并检查商品，确认无误','确认后，货款已转给卖家']
-    :['买家完成支付，货款暂由平台担保','双方在聊天页确认面交地点与时间','当面检查商品，满意后确认完成','确认后，货款已转给卖家'];
+    ?['买家完成支付（含跑腿费），货款暂由平台担保','卖家备好货，送货至买家填写地址','买家收货并检查商品，确认无误','买家已扫码支付，交易完成']
+    :['买家完成支付，货款暂由平台担保','双方在聊天页确认面交地点与时间','当面检查商品，满意后确认完成','买家已扫码支付，货款已转给卖家'];
   const steps=orderSteps(o).map((t,i)=>{
     const cls=i<o.status?'done':i===o.status?'now':'todo';
     const node=i<o.status?'✓':i===o.status?'●':(i+1);
     return `<div class="step ${cls}"><div class="snode">${node}</div><div class="sinfo"><b>${t}</b><span>${subDesc[i]}</span></div></div>`;
   }).join('');
-  box.innerHTML=head+tradeCard+`<div class="card steps">${steps}</div>`
-    +`<div class="order-tip">💡 小提示：${isDelivery?'买家请保持手机畅通，收货时当面检查商品再确认；有问题可发起客服仲裁。':'地点可随时在聊天中协商调整；现场验货满意后再确认完成，有问题可当场发起退款。'}</div>`;
+  /* 验货确认完成后（节点3确认 → status 3），买家端把小提示换成查看卖家收款码 */
+  const qrEntry=(isBuyer&&o.status>=3)
+    ?`<div class="btn btn-orange" id="oQrBtn" style="width:100%;">💳 查看卖家收款码</div>`
+    :`<div class="order-tip">💡 小提示：${isDelivery?'买家请保持手机畅通，收货时当面检查商品再确认；有问题可发起客服仲裁。':'地点可随时在聊天中协商调整；现场验货满意后再确认完成，有问题可当场发起退款。'}</div>`;
+  box.innerHTML=head+tradeCard+`<div class="card steps">${steps}</div>`+qrEntry;
+  const qb=$('#oQrBtn');
+  if(qb)qb.addEventListener('click',()=>openSellerQr(o.seller));
   const bs=$('#buyerNoteSave');
   if(bs)bs.addEventListener('click',()=>{
     const v=$('#buyerNoteInput').value.trim();
