@@ -332,7 +332,7 @@ let hiddenAt=0;
 document.addEventListener('visibilitychange',()=>{
   if(document.visibilityState!=='visible'){hiddenAt=Date.now();return;}
   const away=Date.now()-hiddenAt;
-  if(away>5000&&mq&&mq.connected&&state.me&&state.view!=='splash'){
+  if(away>2000&&mq&&mq.connected&&state.me&&state.view!=='splash'){
     try{mq.reconnect();}catch(e){}
     setTimeout(heartbeat,1500);
     return;
@@ -1649,7 +1649,7 @@ function placeOrder(p,mode='self',address=''){
       text:`🧾 ${dispName(state.me.name)} 已下单「${p.name}」，合计 ${fmt(p.price+fee)}${mode==='delivery'?'（含跑腿费）':''}，点此对话沟通交货细节`,ts:Date.now()};
     const ct=NS+'chat/'+pairId(state.me.name,p.owner)+'/'+sys.ts;
     const cp=JSON.stringify(sys);
-    if(mq&&mq.connected){mq.publish(ct,cp,{qos:0,retain:true});mirrorPublish(ct,cp,true);}
+    if(mq&&mq.connected){mq.publish(ct,cp,{qos:1,retain:true});mirrorPublish(ct,cp,true);}
     else if(outbox.length<300)outbox.push({topic:ct,payload:cp,retain:true});
     const blog=state.chatLog[threadKey(p.owner,p.id)]=state.chatLog[threadKey(p.owner,p.id)]||[];
     if(!blog.some(m=>m.ts===sys.ts)){blog.push(sys);blog.sort((a,b)=>a.ts-b.ts);}
@@ -1780,7 +1780,8 @@ function sendChat(text,img){
   }
   const topic=NS+'chat/'+pairId(state.me.name,state.currentPeer)+'/'+msg.ts;
   const payload=JSON.stringify(msg);
-  if(mq&&mq.connected){mq.publish(topic,payload,{qos:0,retain:true});mirrorPublish(topic,payload,true);}
+  /* 聊天消息 qos1：broker 保证送达（qos0 在公网可能丢包，丢了的要等重连后 retained 重放，表现为"收得慢"） */
+  if(mq&&mq.connected){mq.publish(topic,payload,{qos:1,retain:true});mirrorPublish(topic,payload,true);}
   else{if(outbox.length<300)outbox.push({topic,payload,retain:true});toast('网络未连接，消息已暂存，恢复后自动送达');}
   renderChat();
   saveUserData();
@@ -1817,7 +1818,7 @@ function revokeMsg(ts){
   const rev={...m,text:'',img:null,revoked:true};
   const topic=NS+'chat/'+pairId(m.from,m.to)+'/'+m.ts;
   const payload=JSON.stringify(rev);
-  if(mq&&mq.connected){mq.publish(topic,payload,{qos:0,retain:true});mirrorPublish(topic,payload,true);}
+  if(mq&&mq.connected){mq.publish(topic,payload,{qos:1,retain:true});mirrorPublish(topic,payload,true);}
   else toast('网络未连接，稍后撤回会自动生效');
   Object.assign(m,rev);
   renderChat();saveSoon();scheduleArchive();
@@ -1895,16 +1896,21 @@ function peerProduct(peer){
 }
 function renderMsgs(){
   if(!state.me)return;
-  /* 每个频道（peer 或 peer|商品）一行；同一卖家不同商品各自独立 */
+  /* 消息列表按联系人聚合：同一人只显示一个卡片（不同商品频道合并，取最近活跃线程），
+     不再出现"同一卖家分裂成多个会话" */
   /* 群聊频道（grp: 开头）不进消息列表，入口在鹅群页 */
-  const list=Object.entries(state.chatLog)
+  const byPeer={};
+  Object.entries(state.chatLog)
     .filter(([key])=>!key.startsWith('grp:'))
-    .map(([key,log])=>{
+    .forEach(([key,log])=>{
       const th=parseThread(key);
-      return {key,peer:th.peer,pid:th.pid,log:log.filter(m=>m.revoked||m.text||m.img)};
-    })
-    .filter(x=>x.log.length)
-    .sort((a,b)=>b.log[b.log.length-1].ts-a.log[a.log.length-1].ts);
+      const lg=log.filter(m=>m.revoked||m.text||m.img);
+      if(!lg.length)return;
+      const lt=lg[lg.length-1].ts;
+      if(!byPeer[th.peer]||lt>byPeer[th.peer].lt)byPeer[th.peer]={peer:th.peer,key,pid:th.pid,log:lg,lt};
+    });
+  const list=Object.values(byPeer)
+    .sort((a,b)=>b.lt-a.lt);
   $('#msgList').innerHTML=list.length?list.map(({key,peer,pid,log})=>{
     const last=log[log.length-1];
     const prevImg=last.img?(last.img.indexOf('stk#')===0?'[表情包] ':'[图片] '):'';
@@ -1913,7 +1919,8 @@ function renderMsgs(){
     const o=state.orders.find(x=>(!pid||x.productId===pid)&&((x.buyer===state.me.name&&x.seller===peer)||(x.seller===state.me.name&&x.buyer===peer)));
     const usePid=pid||(o&&o.productId)||state.chatProducts[peer];
     const p=usePid?state.products.find(x=>x.id===usePid):null;
-    const un=state.unread[key]||0;
+    /* 未读合并：该联系人的所有商品频道未读总数 */
+    const un=Object.entries(state.unread).reduce((s,[k,v])=>{try{return s+(parseThread(k).peer===peer?v:0);}catch(e){return s;}},0);
     return `<div class="card msg-row" data-peer="${peer}" data-pid="${pid||''}">
       ${avFor(peer)}
       <div class="m-main">
@@ -2140,9 +2147,9 @@ $('#goMigrate').addEventListener('click',async()=>{
   }catch(e){migrating=false;toast('迁移失败，请重试');}
 });
 /* ---------- 版本公告 ---------- */
-const APP_VERSION='v5.42';
+const APP_VERSION='v5.43';
 const CHANGELOG=[
-  {v:'v5.42',d:'11-25',cur:true,t:'全新数据空间上线：旧总线数据已分裂无法统一，全员切换干净新空间（所有设备天然一致）；「我的」新增「迁移旧版商品」，在数据最全的设备上点一次即可找回商品'},
+  {v:'v5.43',d:'11-25',cur:true,t:'消息列表按联系人合并（同一人不再分裂成多个会话）；聊天消息升级 QoS1 保障送达不再延迟丢失；切回前台 2 秒内恢复收消息'},
   {v:'v5.9.6',d:'11-20',t:'移除视频上传功能，上传只支持图片（最多 4 张），历史商品中的视频不再展示'},
   {v:'v5.9.5',d:'11-20',t:'频道导航平铺到首页（闲鱼样式）：一行排序/筛选频道 + 一排图标分类频道，点右侧箭头打开全部频道弹窗'},
   {v:'v5.9.4',d:'11-20',t:'首页搜索框新增下拉筛选频道面板：推荐/最新发布/热门商品排序，支持面交/可议价筛选，11 个商品大类一键筛选；首页标题改为「闲鹅校园二手APP」'},
