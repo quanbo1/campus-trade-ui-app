@@ -7,7 +7,7 @@
 <title>校园闲置</title>
 <script src="https://unpkg.com/mqtt@5.10.1/dist/mqtt.min.js"></script>
 <script>if(typeof mqtt==='undefined'){document.write('<scr'+'ipt src="https://cdn.jsdelivr.net/npm/mqtt@5.10.1/dist/mqtt.min.js"></scr'+'ipt>');}</script>
-<link rel="stylesheet" href="style.css?v=5.40">
+<link rel="stylesheet" href="style.css?v=5.41">
 </head>
 <body>
 
@@ -67,7 +67,8 @@
     <input class="login-input" id="liPass" type="password" maxlength="24" placeholder="密码（首次输入即注册）">
     <div class="login-err" id="loginErr"></div>
     <div class="btn btn-orange login-btn" id="liGo">登录 / 注册</div>
-    <div class="login-hint">首次使用：输入昵称和密码即自动注册<br>体验卖家账号：爱整理的小周 / 123456<br>密码仅用于区分身份，请勿使用常用密码</div>
+    <div class="btn btn-ghost2 login-btn" id="guestGo">游客登录 · 自动分配账号</div>
+    <div class="login-hint">首次使用：输入昵称和密码即自动注册<br>游客登录无需注册，自动分配 1~10 号体验账号<br>密码仅用于区分身份，请勿使用常用密码</div>
   </div>
 </div>
 
@@ -281,7 +282,7 @@
   </div>
   <div class="detail-btns" id="dBtns">
     <div class="icon-btn" id="dFav"><svg class="ic" width="18" height="18" viewBox="0 0 24 24"><path d="M12 21s-7.5-4.6-9.5-9A5.4 5.4 0 0 1 12 6.4 5.4 5.4 0 0 1 21.5 12c-2 4.4-9.5 9-9.5 9z"/></svg><span>收藏</span></div>
-    <div class="btn btn-latte" id="dContactSeller">联系卖家</div>
+    <div class="btn btn-ghost2" id="dContactSeller">联系卖家</div>
     <div class="btn btn-orange" id="dBuy">立即下单</div>
   </div>
 </div>
@@ -626,7 +627,7 @@
     <div id="ocModeBox"></div>
     <div class="ord-tip" id="ocTip">🛡️ 交易流程：确认面交地点 → 买卖双方现场验货 → 交易完成。验货满意才付款，有问题可发起客服仲裁。</div>
     <div class="ord-btns">
-      <div class="btn btn-latte" id="ocNo">再想想</div>
+      <div class="btn btn-ghost2" id="ocNo">再想想</div>
       <div class="btn btn-orange" id="ocYes">确认下单</div>
     </div>
   </div>
@@ -713,6 +714,6 @@
 
 </div>
 
-<script src="app.js?v=5.40"></script>
+<script src="app.js?v=5.41"></script>
 </body>
 </html>
