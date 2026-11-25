@@ -72,11 +72,11 @@ svg.ic{stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;strok
 .splash-dots i:first-child{background:var(--orange);width:20px;border-radius:4px;}
 /* 首页 */
 /* 首页频道导航（闲鱼样式：文字频道排 + 图标频道排） */
-.home-channels{position:relative;background:var(--cream);padding:4px 0 4px;border-bottom:1px solid rgba(60,45,30,.06);}
+.home-channels{position:relative;background:var(--cream);padding:10px 0 4px;border-bottom:1px solid rgba(60,45,30,.06);}
 .hc-scroll{display:flex;gap:6px;overflow-x:auto;padding:0 12px;scrollbar-width:none;-webkit-overflow-scrolling:touch;}
 .hc-scroll::-webkit-scrollbar{display:none;}
 .hc-tabs{padding-bottom:0;}
-.hc-tabs-row{display:flex;align-items:center;gap:8px;padding:7px 12px 4px 0;}
+.hc-tabs-row{display:flex;align-items:center;gap:8px;padding:7px 12px 6px 0;}
 .hc-tabs-row .hc-tabs{flex:1;min-width:0;padding-left:19px;}
 .hc-tab{flex-shrink:0;height:30px;padding:0 13px;border-radius:15px;background:var(--cream-2);display:flex;align-items:center;font-size:13px;color:var(--text2);cursor:pointer;transition:.12s;white-space:nowrap;}
 .hc-tab.on{background:var(--orange);color:#fff;font-weight:700;}
@@ -122,8 +122,8 @@ svg.ic{stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;strok
 .cat-row{display:flex;gap:8px;padding:16px 16px 0;overflow-x:auto;flex-shrink:0;}
 .cat{font-size:12px;padding:7px 14px;border-radius:15px;background:var(--card);border:1px solid var(--line);color:var(--text2);cursor:pointer;white-space:nowrap;transition:.15s;}
 .cat.on{background:var(--latte-bg);border-color:var(--latte);color:#A85A20;font-weight:700;}
-.home-body{flex:1;padding:4px 18px 110px;overflow-y:auto;}
-.goods-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px;}
+.home-body{flex:1;padding:8px 18px 110px;overflow-y:auto;}
+.goods-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:16px;}
 .goods{overflow:hidden;padding-bottom:12px;cursor:pointer;transition:.15s;position:relative;}
 .goods:active{transform:scale(.97);}
 .goods .gimg{height:96px;border-radius:16px 16px 0 0;display:flex;align-items:center;justify-content:center;font-size:38px;overflow:hidden;}
