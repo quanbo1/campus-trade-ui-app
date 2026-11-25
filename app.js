@@ -114,61 +114,45 @@ function setNetUI(on,text){
     p.lastChild.textContent=text;
   });
 }
-let raceTimer=null;
+/* 【节点固定】所有设备统一连 BROKERS[0] 主节点：两个公共 broker 数据不互通，
+   之前"谁快用谁"的竞速会让不同设备连到不同节点，看到不同的商品列表。
+   主节点连不上时才轮换备用节点，稳定后自动切回主节点，保证所有人数据一致 */
 function mqConnect(){
   if(typeof mqtt==='undefined'){setNetUI(false,'组件加载失败，请刷新');return;}
   if(mq){try{mq.end(true);}catch(e){}mq=null;}
-  clearTimeout(raceTimer);
   setNetUI(false,'正在连接市集…');
-  /* 三节点并行竞速：同时发起连接，谁先连上用谁，其余立即关闭 */
-  let settled=false;
-  const clients=[];
-  const cleanup=()=>{
-    clearTimeout(raceTimer);
-    clients.forEach(c=>{if(c!==mq){try{c.end(true);}catch(e){}}});
-  };
-  BROKERS.forEach((url,i)=>{
-    const c=mqtt.connect(url,{clientId:'cu_'+Math.random().toString(16).slice(2,10),clean:true,keepalive:25,connectTimeout:8000,reconnectPeriod:3000});
-    clients.push(c);
-    c.on('connect',()=>{
-      /* 已定主时的 connect：断线后 mqtt.js 自动重连成功（c===mq）→ 恢复订阅与界面，绝不关闭；
-         竞速败者才关闭。此前重连成功也会被误当竞速败者关掉，导致反复掉线、无法自动恢复 */
-      if(settled){
-        if(c===mq){failCount=0;onNetUp();}
-        else{try{c.end(true);}catch(e){}}
-        return;
-      }
-      settled=true;
-      brokerIdx=i;failCount=0;mq=c;
-      cleanup();
-      /* 每次连上就清一次演示商品，三节点同步墓碑 */
-      setTimeout(()=>{try{purgeAllSeeds();}catch(e){}},1200);
-      onNetUp();
-    });
-    c.on('message',(t,p,packet)=>{if(packet&&packet.retain)mainRetainTopics.add(t);onMqMsg(t,p);});
-    c.on('close',()=>{
-      if(!settled||c!==mq)return;
-      setNetUI(false,'连接断开，自动重连');
-      failCount++;
-      /* mqtt.js 自带指数重连；连续 4 次失败才切换节点，减少不必要的全量重连 */
-      if(failCount>=4){
-        failCount=0;
-        setNetUI(false,'切换节点…');
-        setTimeout(mqConnect,500);
-      }
-    });
-    c.on('reconnect',()=>{if(!settled||c===mq)setNetUI(false,'重连中…');});
-    c.on('error',()=>{});
+  const url=BROKERS[brokerIdx%BROKERS.length];
+  const c=mqtt.connect(url,{clientId:'cu_'+Math.random().toString(16).slice(2,10),clean:true,keepalive:25,connectTimeout:8000,reconnectPeriod:3000});
+  mq=c;
+  c.on('connect',()=>{
+    failCount=0;
+    /* 每次连上就清一次演示商品，三节点同步墓碑 */
+    setTimeout(()=>{try{purgeAllSeeds();}catch(e){}},1200);
+    onNetUp();
+    /* 备用节点稳定 90 秒后：静默切回主节点（数据统一优先） */
+    if(brokerIdx%BROKERS.length!==0){
+      setTimeout(()=>{
+        if(mq===c&&mq.connected&&brokerIdx%BROKERS.length!==0){
+          brokerIdx=0;setTimeout(mqConnect,100);
+        }
+      },90000);
+    }
   });
-  /* 15 秒内没有任何节点连上：全部重来一轮 */
-  raceTimer=setTimeout(()=>{
-    if(settled)return;
-    settled=true;
-    cleanup();
+  c.on('message',(t,p,packet)=>{if(packet&&packet.retain)mainRetainTopics.add(t);onMqMsg(t,p);});
+  c.on('close',()=>{
+    if(c!==mq)return;
+    setNetUI(false,'连接断开，自动重连');
     failCount++;
-    setNetUI(false,'节点较慢，重试…');
-    setTimeout(mqConnect,500);
-  },15000);
+    /* mqtt.js 自带指数重连；连续 4 次失败才切换节点 */
+    if(failCount>=4){
+      failCount=0;
+      brokerIdx++;
+      setNetUI(false,'切换节点…');
+      setTimeout(mqConnect,500);
+    }
+  });
+  c.on('reconnect',()=>setNetUI(false,'重连中…'));
+  c.on('error',()=>{});
 }
 /* 断线暂存队列：retain 消息断网时先存起来，恢复连接后自动补发 */
 const outbox=[];
@@ -2104,9 +2088,9 @@ function openSellerQr(seller){
   $('#qrViewOverlay').classList.add('show');
 }
 /* ---------- 版本公告 ---------- */
-const APP_VERSION='v5.39';
+const APP_VERSION='v5.40';
 const CHANGELOG=[
-  {v:'v5.39',d:'11-25',cur:true,t:'登录页恢复：账号密码登录 + 新增游客登录（自动分配账号）；消息同步大幅提速（切回前台秒级恢复收消息）；「联系卖家」「再想想」改浅灰橙字样式；不再弹「已缓存商品」提示'},
+  {v:'v5.40',d:'11-25',cur:true,t:'重大修复：所有用户数据彻底统一——固定全员连接同一主节点（之前连接竞速导致不同设备看到不同商品列表），主节点故障自动切换备用并在恢复后切回'},
   {v:'v5.9.6',d:'11-20',t:'移除视频上传功能，上传只支持图片（最多 4 张），历史商品中的视频不再展示'},
   {v:'v5.9.5',d:'11-20',t:'频道导航平铺到首页（闲鱼样式）：一行排序/筛选频道 + 一排图标分类频道，点右侧箭头打开全部频道弹窗'},
   {v:'v5.9.4',d:'11-20',t:'首页搜索框新增下拉筛选频道面板：推荐/最新发布/热门商品排序，支持面交/可议价筛选，11 个商品大类一键筛选；首页标题改为「闲鹅校园二手APP」'},
