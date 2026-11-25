@@ -18,6 +18,8 @@ body{background:var(--cream);font-family:"PingFang SC","Microsoft YaHei",-apple-
 .btn-latte{background:linear-gradient(135deg,#F0A76C,var(--latte));color:#fff;box-shadow:0 6px 14px rgba(233,148,90,.4);}
 .btn-orange{background:linear-gradient(135deg,#F0A76C,var(--orange));color:#fff;box-shadow:0 6px 14px rgba(233,148,90,.4);}
 .btn-ghost{background:transparent;border:1.5px solid var(--latte);color:var(--latte);}
+/* 浅灰底橙字（与首页筛选按钮同款） */
+.btn-ghost2{background:#fff;border:1.5px solid #C4BEB4;color:var(--orange);box-shadow:0 1px 4px rgba(0,0,0,.06);}
 .chip{display:inline-flex;align-items:center;padding:5px 12px;border-radius:14px;font-size:12px;background:var(--latte-bg);color:#A85A20;border:1px solid var(--line);}
 .chip.orange{background:var(--orange-soft);color:#C96F2E;border-color:#F3D9BC;}
 .card{background:var(--card);border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow);}
