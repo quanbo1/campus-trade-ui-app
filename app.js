@@ -4,7 +4,11 @@
    ================================================================ */
 const $=s=>document.querySelector(s);
 const $$=s=>[...document.querySelectorAll(s)];
-const NS='campus2nd_v1/';
+/* 【数据空间 v2】旧空间(campus2nd_v1)因历史多节点竞速已数据分裂且无法自愈，
+   全员切换到全新空间 campus2nd_m2：所有设备从零开始、只连主节点，天然一致。
+   旧空间的商品用「我的→迁移旧版商品」按钮手动迁入（在数据最全的设备上点一次） */
+const NS='campus2nd_m2/';
+const NS_OLD='campus2nd_v1/';
 /* 访客模式开关：true=隐藏登录页，自动分配 1~10 号账号；false=还原正常登录 */
 const GUEST_MODE=true;
 const SEED_USERS=['爱整理的小周','数码 scavenger','早睡冠军','衣柜断舍离','上岸学长'];
@@ -61,14 +65,14 @@ const state={
 /* ---------- 商品本地持久缓存：云端总线保留消息可能被公共 broker 清理，本机缓存即最后备份 ----------
    启动时先从缓存恢复（页面秒开商品），云端消息到齐后合并；缓存有而云端丢失的商品由自愈补种回总线 */
 function saveProdsCache(){
-  try{setStore('prods',state.products.slice(-60));}
+  try{setStore('prods_m2',state.products.slice(-60));}
   catch(e){
     /* 容量不足：去掉 base64 图片再存（保商品文字信息，图可从云端/重新上传恢复） */
     try{
       const slim=state.products.slice(-60).map(p=>Object.assign({},p,{
         img:(p.img&&p.img.indexOf('data:')===0)?'':(p.img||''),
         imgs:(p.imgs||[]).map(x=>(x&&x.indexOf('data:')===0)?'':x).filter(Boolean)}));
-      setStore('prods',slim);
+      setStore('prods_m2',slim);
     }catch(e2){}
   }
 }
@@ -77,7 +81,7 @@ function saveProdsSoon(){clearTimeout(prodsSaveT);prodsSaveT=setTimeout(saveProd
 /* 启动恢复商品缓存：不依赖后面才定义的 getStore（避免 TDZ 崩溃白屏），并防缓存损坏 */
 (function(){
   try{
-    const v=localStorage.getItem('cu_prods');
+    const v=localStorage.getItem('cu_prods_m2');
     const c=v?JSON.parse(v):null;
     if(c&&Array.isArray(c)&&c.length)state.products=c.slice();
   }catch(e){}
@@ -2088,10 +2092,57 @@ function openSellerQr(seller){
   body.innerHTML=items.map(x=>`<div class="qr-slot"><div class="qr-slot-label">${x.t}收款码</div><div class="qr-box" style="border-style:solid;background:#fff;"><img src="${x.src}"></div></div>`).join('');
   $('#qrViewOverlay').classList.add('show');
 }
+/* ---------- 迁移旧版商品：从旧总线(campus2nd_v1)的 retained + 本机旧缓存收集商品，发布到新空间 ----------
+   在「数据最全的那台设备」上点一次即可，迁移结果为云端共享，其他设备自动收到 */
+let migrating=false;
+$('#goMigrate').addEventListener('click',async()=>{
+  if(!state.me){toast('先登录再迁移');return;}
+  if(migrating)return;
+  if(!mq||!mq.connected){toast('网络未连接，稍后再试');return;}
+  migrating=true;
+  toast('正在从旧版总线收集商品…');
+  const collected={};
+  const oldHandler=(t,p)=>{
+    try{
+      if(!t.startsWith(NS_OLD))return;
+      const path=t.slice(NS_OLD.length);
+      if(!path.startsWith('products/'))return;
+      if(!p)return;
+      const d=JSON.parse(p);
+      if(d&&d.name&&!d.sold)collected[d.id]=d;
+    }catch(e){}
+  };
+  const finish=async()=>{
+    try{mq.removeListener('message',oldHandler);}catch(e){}
+    try{mq.unsubscribe(NS_OLD+'products/+');}catch(e){}
+    /* 合并本机旧版缓存（旧 key cu_prods） */
+    try{
+      const oc=JSON.parse(localStorage.getItem('cu_prods')||'null');
+      if(Array.isArray(oc))oc.forEach(p=>{if(p&&p.id&&p.name&&!p.sold&&!collected[p.id])collected[p.id]=p;});
+    }catch(e){}
+    let n=0;
+    Object.values(collected).forEach(p=>{
+      try{
+        mq.publish(NS+'products/'+p.id,JSON.stringify(p),{qos:0,retain:true});
+        mirrorPublish(NS+'products/'+p.id,JSON.stringify(p),true);n++;
+      }catch(e){}
+    });
+    migrating=false;
+    toast(n?('已迁移 '+n+' 件商品到新版市集 ✅'):'旧版没有可迁移的商品');
+  };
+  try{
+    mq.on('message',oldHandler);
+    mq.subscribe(NS_OLD+'products/+',{},()=>{
+      /* retained 推送需要一点时间到齐 */
+      setTimeout(finish,3500);
+    });
+    setTimeout(()=>{if(migrating)finish();},6000);
+  }catch(e){migrating=false;toast('迁移失败，请重试');}
+});
 /* ---------- 版本公告 ---------- */
-const APP_VERSION='v5.41';
+const APP_VERSION='v5.42';
 const CHANGELOG=[
-  {v:'v5.41',d:'11-25',cur:true,t:'连接徽标显示版本与节点（右上角「已连接 · v5.41」可核对设备是否最新版）；商品补种提速（5 秒）、备用节点 30 秒自动切回主节点，多设备数据更快一致'},
+  {v:'v5.42',d:'11-25',cur:true,t:'全新数据空间上线：旧总线数据已分裂无法统一，全员切换干净新空间（所有设备天然一致）；「我的」新增「迁移旧版商品」，在数据最全的设备上点一次即可找回商品'},
   {v:'v5.9.6',d:'11-20',t:'移除视频上传功能，上传只支持图片（最多 4 张），历史商品中的视频不再展示'},
   {v:'v5.9.5',d:'11-20',t:'频道导航平铺到首页（闲鱼样式）：一行排序/筛选频道 + 一排图标分类频道，点右侧箭头打开全部频道弹窗'},
   {v:'v5.9.4',d:'11-20',t:'首页搜索框新增下拉筛选频道面板：推荐/最新发布/热门商品排序，支持面交/可议价筛选，11 个商品大类一键筛选；首页标题改为「闲鹅校园二手APP」'},
