@@ -58,6 +58,24 @@ const state={
   csMsgs:[{side:'left',text:'同学你好～我是闲置小助手。想和真人卖家聊，请到商品详情页点「联系卖家」；这里处理交易纠纷与平台问题 📎'}],
 };
 
+/* ---------- 商品本地持久缓存：云端总线保留消息可能被公共 broker 清理，本机缓存即最后备份 ----------
+   启动时先从缓存恢复（页面秒开商品），云端消息到齐后合并；缓存有而云端丢失的商品由自愈补种回总线 */
+function saveProdsCache(){
+  try{setStore('prods',state.products.slice(-60));}
+  catch(e){
+    /* 容量不足：去掉 base64 图片再存（保商品文字信息，图可从云端/重新上传恢复） */
+    try{
+      const slim=state.products.slice(-60).map(p=>Object.assign({},p,{
+        img:(p.img&&p.img.indexOf('data:')===0)?'':(p.img||''),
+        imgs:(p.imgs||[]).map(x=>(x&&x.indexOf('data:')===0)?'':x).filter(Boolean)}));
+      setStore('prods',slim);
+    }catch(e2){}
+  }
+}
+let prodsSaveT=null;
+function saveProdsSoon(){clearTimeout(prodsSaveT);prodsSaveT=setTimeout(saveProdsCache,900);}
+(function(){const c=getStore('prods');if(c&&Array.isArray(c)&&c.length)state.products=c.slice();})();
+
 /* ---------- 工具 ---------- */
 let toastTimer;
 function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>t.classList.remove('show'),1900);}
@@ -294,8 +312,8 @@ function onNetUp(){
       });
     }
   },3200);
-  /* 商品自愈补种：等云端 retained 到齐后（8 秒），把本地缓存里有而云端丢失的商品重新发回总线。
-     解决版本更新/浏览器清理导致商品"消失"的问题（本地缓存即最后备份） */
+  /* 商品自愈补种：等云端 retained 到齐后（8 秒），把本地持久缓存里有而云端丢失的商品重新发回总线。
+     缓存在启动时已恢复进 state.products，因此刷新/重开页面也能补种（真正断电级备份） */
   setTimeout(()=>{
     if(!mq||!mq.connected)return;
     let n=0;
@@ -307,7 +325,7 @@ function onNetUp(){
         mq.publish(t,JSON.stringify(p),{qos:0,retain:true});n++;
       });
     }catch(e){}
-    if(n>0)toast('已从本机恢复 '+n+' 件商品数据');
+    if(n>0){saveProdsCache();toast('已从本机缓存恢复 '+n+' 件商品');}
   },8000);
   heartbeat();
 }
@@ -361,6 +379,7 @@ function onMqMsg(topic,payload){
     }
     if(!data)state.products=state.products.filter(p=>p.id!==id);
     else{const i=state.products.findIndex(p=>p.id===id);if(i>=0)state.products[i]=data;else state.products.push(data);}
+    saveProdsSoon();
     if(state.view==='home')renderGoods();
     if(state.view==='detail'&&curP()?.id===id)renderDetail();
     if(state.view==='profile')renderProfile();
@@ -1209,6 +1228,7 @@ function delistProduct(){
   const p=curP();if(!p)return;
   if(pub(NS+'products/'+p.id,null,true)){
     state.products=state.products.filter(x=>x.id!==p.id);
+    saveProdsCache();
     toast(p.sold?'已删除记录':(p.kind==='buy'?'求购帖已取消':'商品已下架'));
     showView('home');
   }
@@ -2007,9 +2027,9 @@ function renderProfile(){
   publishActivity();
 }
 /* ---------- 版本公告 ---------- */
-const APP_VERSION='v5.35';
+const APP_VERSION='v5.36';
 const CHANGELOG=[
-  {v:'v5.35',d:'11-25',cur:true,t:'AI 描述提速并修正串味：生成描述改用更快的文本模型、识别出的商品名传入文案（不再出现识别火腿肠说成巧克力）；换图自动重置旧推荐价；按钮更名「闲鹅生成描述」；推荐排与图标排左对齐'},
+  {v:'v5.36',d:'11-25',cur:true,t:'商品防丢终极加固：所有商品自动存入本机持久缓存（刷新/重开页面秒显示），云端丢失自动用本机缓存补回；推荐排与分类图标精确左对齐'},
   {v:'v5.9.6',d:'11-20',t:'移除视频上传功能，上传只支持图片（最多 4 张），历史商品中的视频不再展示'},
   {v:'v5.9.5',d:'11-20',t:'频道导航平铺到首页（闲鱼样式）：一行排序/筛选频道 + 一排图标分类频道，点右侧箭头打开全部频道弹窗'},
   {v:'v5.9.4',d:'11-20',t:'首页搜索框新增下拉筛选频道面板：推荐/最新发布/热门商品排序，支持面交/可议价筛选，11 个商品大类一键筛选；首页标题改为「闲鹅校园二手APP」'},
