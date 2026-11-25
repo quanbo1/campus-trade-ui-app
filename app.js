@@ -128,7 +128,7 @@ function mqConnect(){
     clients.forEach(c=>{if(c!==mq){try{c.end(true);}catch(e){}}});
   };
   BROKERS.forEach((url,i)=>{
-    const c=mqtt.connect(url,{clientId:'cu_'+Math.random().toString(16).slice(2,10),clean:true,keepalive:30,connectTimeout:8000,reconnectPeriod:3000});
+    const c=mqtt.connect(url,{clientId:'cu_'+Math.random().toString(16).slice(2,10),clean:true,keepalive:25,connectTimeout:8000,reconnectPeriod:3000});
     clients.push(c);
     c.on('connect',()=>{
       /* 已定主时的 connect：断线后 mqtt.js 自动重连成功（c===mq）→ 恢复订阅与界面，绝不关闭；
@@ -243,7 +243,7 @@ function syncMirrors(){
   MIRROR_URLS.forEach((url,i)=>{
     if(mirrors.some(m=>m.idx===i))return;
     const m={idx:i,c:null,out:[],max:url.indexOf('hivemq')>=0?250000:PAYLOAD_MAX};
-    const c=mqtt.connect(url,{clientId:'cum_'+Math.random().toString(16).slice(2,10),clean:true,keepalive:30,connectTimeout:8000,reconnectPeriod:8000});
+    const c=mqtt.connect(url,{clientId:'cum_'+Math.random().toString(16).slice(2,10),clean:true,keepalive:25,connectTimeout:8000,reconnectPeriod:8000});
     m.c=c;
     c.on('connect',()=>flushMirror(m));
     c.on('error',()=>{});
@@ -331,14 +331,23 @@ function onNetUp(){
         mq.publish(t,JSON.stringify(p),{qos:0,retain:true});n++;
       });
     }catch(e){}
-    if(n>0){saveProdsCache();toast('已从本机缓存恢复 '+n+' 件商品');}
+    if(n>0)saveProdsCache();
   },8000);
   heartbeat();
 }
 function heartbeat(){if(state.me&&mq&&mq.connected)pub(NS+'presence/'+encodeURIComponent(state.me.name),{on:true,ts:Date.now()},true);}
-/* 切回前台立即检查连接：浏览器对后台页面的定时器节流会让自动重连停滞（表现为"无法自动重连"） */
+/* 切回前台立即检查连接：浏览器对后台页面的定时器节流会让自动重连停滞（表现为"无法自动重连"）。
+   后台超过 5 秒：连接大概率已被系统挂起成"半开"（页面以为在线但实际已断），
+   强制重建连接，把"对方 30 秒后才看到消息"压缩到 1~2 秒内恢复 */
+let hiddenAt=0;
 document.addEventListener('visibilitychange',()=>{
-  if(document.visibilityState!=='visible')return;
+  if(document.visibilityState!=='visible'){hiddenAt=Date.now();return;}
+  const away=Date.now()-hiddenAt;
+  if(away>5000&&mq&&mq.connected&&state.me&&state.view!=='splash'){
+    try{mq.reconnect();}catch(e){}
+    setTimeout(heartbeat,1500);
+    return;
+  }
   if(mq&&mq.connected)return;
   /* mqtt.js 自带重连进行中：不打断 */
   if(mq&&mq.reconnecting)return;
@@ -522,29 +531,26 @@ $$('[data-back]').forEach(b=>b.addEventListener('click',goBack));
 
 /* ---------- 启动页 ---------- */
 if(GUEST_MODE){
-  const hint=document.querySelector('#view-splash .tap-hint');
-  if(hint)hint.textContent='正在为你准备账号…';
-  /* 隐藏入口：连续点击开屏 5 次可回到原登录页（供老账号/管理员使用） */
-  let tapN=0,tapT=0;
-  $('#view-splash').addEventListener('click',()=>{
-    const now=Date.now();
-    tapN=(now-tapT<1200)?tapN+1:1;tapT=now;
-    if(tapN>=5){tapN=0;showView('login');return;}
-    if(!state.me)setTimeout(()=>{if(state.view==='splash'&&!state.me)autoGuest();},700);
+  /* 启动进登录页：账号密码登录，或点「游客登录」自动分配 */
+  setTimeout(()=>{if(state.view==='splash'&&!state.me)showView('login');},1200);
+  $('#guestGo').addEventListener('click',async()=>{
+    const err=$('#loginErr');
+    if(err)err.textContent='正在为你分配账号…';
+    await autoGuest();
+    if(err&&err.textContent==='正在为你分配账号…')err.textContent='';
   });
-  setTimeout(()=>{if(state.view==='splash'&&!state.me)autoGuest();},1500);
 }else{
   $('#view-splash').addEventListener('click',()=>showView(state.me?'home':'login'));
   setTimeout(()=>{if(state.view==='splash')showView(state.me?'home':'login');},3000);
 }
 /* ---------- 访客模式：自动分配 1~10 号账号 ---------- */
 async function autoGuest(){
-  if(state.me||state.view!=='splash')return;
-  const hint=document.querySelector('#view-splash .tap-hint');
+  if(state.me||(state.view!=='splash'&&state.view!=='login'))return;
+  const err=$('#loginErr');
   const ok=await waitNet(10000);
   if(!mq||!mq.connected){
-    if(hint)hint.textContent='网络较慢，正在重试…';
-    setTimeout(()=>{if(state.view==='splash'&&!state.me)autoGuest();},2000);
+    if(state.view==='login'&&err)err.textContent='网络较慢，正在重试…';
+    setTimeout(()=>{if(!state.me)autoGuest();},2000);
     return;
   }
   /* 等总线上的注册表（保留消息）到达，避免误判占用 */
@@ -2098,9 +2104,9 @@ function openSellerQr(seller){
   $('#qrViewOverlay').classList.add('show');
 }
 /* ---------- 版本公告 ---------- */
-const APP_VERSION='v5.38';
+const APP_VERSION='v5.39';
 const CHANGELOG=[
-  {v:'v5.38',d:'11-25',cur:true,t:'首页间距全面均衡：搜索框/分类图标/推荐筛选/商品列表四段间距统一（约15px），整体更舒适'},
+  {v:'v5.39',d:'11-25',cur:true,t:'登录页恢复：账号密码登录 + 新增游客登录（自动分配账号）；消息同步大幅提速（切回前台秒级恢复收消息）；「联系卖家」「再想想」改浅灰橙字样式；不再弹「已缓存商品」提示'},
   {v:'v5.9.6',d:'11-20',t:'移除视频上传功能，上传只支持图片（最多 4 张），历史商品中的视频不再展示'},
   {v:'v5.9.5',d:'11-20',t:'频道导航平铺到首页（闲鱼样式）：一行排序/筛选频道 + 一排图标分类频道，点右侧箭头打开全部频道弹窗'},
   {v:'v5.9.4',d:'11-20',t:'首页搜索框新增下拉筛选频道面板：推荐/最新发布/热门商品排序，支持面交/可议价筛选，11 个商品大类一键筛选；首页标题改为「闲鹅校园二手APP」'},
