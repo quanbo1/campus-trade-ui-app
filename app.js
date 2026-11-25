@@ -2007,9 +2007,9 @@ function renderProfile(){
   publishActivity();
 }
 /* ---------- 版本公告 ---------- */
-const APP_VERSION='v5.34';
+const APP_VERSION='v5.35';
 const CHANGELOG=[
-  {v:'v5.34',d:'11-25',cur:true,t:'重大修复：商品数据自愈——本机缓存商品自动补种回云端，版本更新不再丢商品；地址永久固定不再更换；推荐排间距优化、求购帖 AI 文案改收购口吻、求购帖隐藏跑腿费与可议字样'},
+  {v:'v5.35',d:'11-25',cur:true,t:'AI 描述提速并修正串味：生成描述改用更快的文本模型、识别出的商品名传入文案（不再出现识别火腿肠说成巧克力）；换图自动重置旧推荐价；按钮更名「闲鹅生成描述」；推荐排与图标排左对齐'},
   {v:'v5.9.6',d:'11-20',t:'移除视频上传功能，上传只支持图片（最多 4 张），历史商品中的视频不再展示'},
   {v:'v5.9.5',d:'11-20',t:'频道导航平铺到首页（闲鱼样式）：一行排序/筛选频道 + 一排图标分类频道，点右侧箭头打开全部频道弹窗'},
   {v:'v5.9.4',d:'11-20',t:'首页搜索框新增下拉筛选频道面板：推荐/最新发布/热门商品排序，支持面交/可议价筛选，11 个商品大类一键筛选；首页标题改为「闲鹅校园二手APP」'},
@@ -2282,6 +2282,7 @@ $('#csFile').addEventListener('change',async e=>{
 /* ---------- 发布上传 ---------- */
 const UP_MAX=4;
 let pubImgs=[];
+let aiRecName='';
 const AI_POOL=CATS.map(c=>c.major);
 function resetPublish(){
   pubImgs=[];state.pubTags=new Set();state.pubGrade='九成新';state.pubCut='接受小刀';
@@ -2292,6 +2293,7 @@ function resetPublish(){
   $('#pubTitle').textContent='发布闲置';
   const sb=$('#pubSubmit');if(sb)sb.textContent='发布闲置';
   $('#aiState').textContent='上传照片后自动识别';
+  aiPriceData=null;aiRecName='';renderAiPrice();
   syncTradeUI();syncKindUI();
   renderUpload();
 }
@@ -2407,11 +2409,11 @@ $('#aiDescBtn').addEventListener('click',async()=>{
   const cat=pubMajor()||'其他闲置';
   const isBuy=state.pubKind==='buy';
   const price=$('#pubPrice').value;
-  $('#aiDescBtn').textContent='🦢 AI 生成中…';
+  $('#aiDescBtn').textContent='🦢 闲鹅生成中…';
   try{
-    const txt=await aiChat([{role:'user',content:'你是校园二手交易平台"闲鹅"的文案助手。请直接输出一段' +(isBuy?'求购帖':'出售帖')+'描述（40-80字，口语化、真诚、带 emoji，不要标题不要引号不要解释）。信息：分类=' + cat + '；成色=' + (state.pubGrade||'未知') + '；' + (isBuy?'求购心理价':'出价') + '=' + (price?'¥'+price:'未填') + '；描述要求：' + (isBuy?'你是求购者本人，用蹲收/求购的口吻（如"蹲一个""求收""学长学姐看过来"），表达想收购的意愿：说明想要的成色范围、心理价预算（可小刀的意思是预算上下可商量），交接方式灵活（可面交可送货）。绝对不要出现"出售""带走""卖出""低价出""捡漏"这类卖家词语':'突出成色、校内自提验货、放心交易') + '。' + ($('#pubDesc').value?'原描述（可润色）：'+$('#pubDesc').value.slice(0,80):'')}]);
+    const txt=await aiChat([{role:'user',content:'你是校园二手交易平台"闲鹅"的文案助手。请直接输出一段' +(isBuy?'求购帖':'出售帖')+'描述（40-80字，口语化、真诚、带 emoji，不要标题不要引号不要解释）。信息：' + (aiRecName?'商品名='+aiRecName+'（必须围绕它写，不得虚构别的商品）；':'') + '分类=' + cat + '；成色=' + (state.pubGrade||'未知') + '；' + (isBuy?'求购心理价':'出价') + '=' + (price?'¥'+price:'未填') + '；描述要求：' + (isBuy?'你是求购者本人，用蹲收/求购的口吻（如"蹲一个""求收""学长学姐看过来"），表达想收购的意愿：说明想要的成色范围、心理价预算（可小刀的意思是预算上下可商量），交接方式灵活（可面交可送货）。绝对不要出现"出售""带走""卖出""低价出""捡漏"这类卖家词语':'突出成色、校内自提验货、放心交易') + '。' + ($('#pubDesc').value?'原描述（可润色）：'+$('#pubDesc').value.slice(0,80):'')}],null,true);
     const clean=txt.trim().replace(/^["'「]+|["'」]+$/g,'');
-    if(clean){$('#pubDesc').value=clean.slice(0,240);toast('AI 描述已生成 ✨');}
+    if(clean){$('#pubDesc').value=clean.slice(0,240);toast('闲鹅描述已生成 ✨');}
     else throw new Error('空结果');
   }catch(e){
     /* 回退：本地词库 */
@@ -2426,7 +2428,7 @@ $('#aiDescBtn').addEventListener('click',async()=>{
     }
     toast('AI 通道暂不可用，已用本地文案 ✏️');
   }
-  $('#aiDescBtn').textContent='🦢 AI 生成描述';
+  $('#aiDescBtn').textContent='🦢 闲鹅生成描述';
 });
 function renderUpload(){
   const g=$('#upGrid');
@@ -2498,7 +2500,7 @@ $('#tagList').addEventListener('click',e=>{
 });
 $('#upGrid').addEventListener('click',e=>{
   const del=e.target.closest('[data-del]');
-  if(del){pubImgs.splice(+del.dataset.del,1);renderUpload();return;}
+  if(del){pubImgs.splice(+del.dataset.del,1);aiPriceData=null;aiRecName='';renderAiPrice();renderUpload();return;}
   if(e.target.closest('#upAdd')||e.target.closest('[data-cam]'))$('#fileInput').click();
 });
 function compressImg(file){
@@ -2551,7 +2553,7 @@ function aiChannelName(){
   return c.key&&c.base?(c.model||'自定义模型'):'免费智能通道';
 }
 /* 调用对话模型：messages 为 OpenAI 格式；img 为 dataURL 时走视觉 */
-async function aiChat(messages,img){
+async function aiChat(messages,img,useTextModel){
   const cfg=getAiCfg();
   if(img){
     /* 把图片作为消息内容插入最后一条 user 消息 */
@@ -2565,8 +2567,9 @@ async function aiChat(messages,img){
     /* key 可选：站长代理通道（Worker）由服务端注入 Key，前端不带 */
     if(cfg.key)headers.Authorization='Bearer '+cfg.key;
     if(cfg.base.indexOf('openrouter')>-1){headers['HTTP-Referer']=location.origin;headers['X-Title']='xiange';}
-    /* max_tokens 320：实测识别/描述 1 秒级返回；不设限会让思考型模型拖到几十秒 */
-    body=JSON.stringify({model:cfg.model||'gpt-4o-mini',messages,temperature:.4,max_tokens:320});
+    /* max_tokens 320：实测识别/描述 1 秒级返回；不设限会让思考型模型拖到几十秒。
+       纯文本任务（描述生成）走专用文本模型：无视觉负担、实测更快更稳 */
+    body=JSON.stringify({model:(useTextModel&&cfg.model&&cfg.model.indexOf('VL')>-1?'Qwen/Qwen2.5-7B-Instruct':(cfg.model||'gpt-4o-mini')),messages,temperature:.4,max_tokens:320});
   }else{
     url='https://text.pollinations.ai/openai';
     body=JSON.stringify({model:'openai-fast',messages,private:true});
@@ -2653,6 +2656,9 @@ async function aiRecognize(){
   }
   if(aiBusy)return;
   aiBusy=true;
+  /* 识别开始即清空上一张图的结果：旧推荐价/旧标签不再残留，重新识别重新给价 */
+  aiPriceData=null;renderAiPrice();aiRecName='';
+  state.pubTags=new Set();renderUpload();
   $('#aiState').textContent='AI 正在识别图片…';
   try{
     const imgForAi=await shrinkImg(pubImgs[0]);
@@ -2668,6 +2674,7 @@ async function aiRecognize(){
       if(desc&&!desc.includes(d.name))$('#pubDesc').value=d.name+'｜'+desc;
     }
     aiPriceData=(isFinite(d.price)&&d.price>0)?{price:Math.round(d.price),reason:d.reason||''}:null;
+    aiRecName=String(d.name||'').slice(0,20);
     $('#aiState').textContent=(d.name||'识别完成');
     renderUpload();
     toast('AI 识别完成，标签/成色/描述/建议价已填好 ✨');
