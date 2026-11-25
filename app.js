@@ -129,13 +129,13 @@ function mqConnect(){
     /* 每次连上就清一次演示商品，三节点同步墓碑 */
     setTimeout(()=>{try{purgeAllSeeds();}catch(e){}},1200);
     onNetUp();
-    /* 备用节点稳定 90 秒后：静默切回主节点（数据统一优先） */
+    /* 备用节点稳定 30 秒后：静默切回主节点（数据统一优先） */
     if(brokerIdx%BROKERS.length!==0){
       setTimeout(()=>{
         if(mq===c&&mq.connected&&brokerIdx%BROKERS.length!==0){
           brokerIdx=0;setTimeout(mqConnect,100);
         }
-      },90000);
+      },30000);
     }
   });
   c.on('message',(t,p,packet)=>{if(packet&&packet.retain)mainRetainTopics.add(t);onMqMsg(t,p);});
@@ -280,7 +280,8 @@ window.addEventListener('online',()=>{
 });
 window.addEventListener('offline',()=>setNetUI(false,'网络离线'));
 function onNetUp(){
-  setNetUI(true,'已连接');
+  /* 显示版本+节点：每台设备都能看出自己在跑哪个版本、连的哪个节点（排查数据不一致用） */
+  setNetUI(true,'已连接 · '+APP_VERSION+(brokerIdx%BROKERS.length===0?'':'·备'));
   chatSubTopic=null;
   mq.subscribe([NS+'users/+',NS+'profiles/+',NS+'products/+',NS+'orders/+',NS+'presence/+',NS+'chat/+/+',NS+'archive/+',NS+'groups/+',NS+'groupchat/+/+']);
   flushOutbox();
@@ -302,7 +303,7 @@ function onNetUp(){
       });
     }
   },3200);
-  /* 商品自愈补种：等云端 retained 到齐后（8 秒），把本地持久缓存里有而云端丢失的商品重新发回总线。
+  /* 商品自愈补种：等云端 retained 到齐后（5 秒），把本地持久缓存里有而云端丢失的商品重新发回总线。
      缓存在启动时已恢复进 state.products，因此刷新/重开页面也能补种（真正断电级备份） */
   setTimeout(()=>{
     if(!mq||!mq.connected)return;
@@ -316,7 +317,7 @@ function onNetUp(){
       });
     }catch(e){}
     if(n>0)saveProdsCache();
-  },8000);
+  },5000);
   heartbeat();
 }
 function heartbeat(){if(state.me&&mq&&mq.connected)pub(NS+'presence/'+encodeURIComponent(state.me.name),{on:true,ts:Date.now()},true);}
@@ -2088,9 +2089,9 @@ function openSellerQr(seller){
   $('#qrViewOverlay').classList.add('show');
 }
 /* ---------- 版本公告 ---------- */
-const APP_VERSION='v5.40';
+const APP_VERSION='v5.41';
 const CHANGELOG=[
-  {v:'v5.40',d:'11-25',cur:true,t:'重大修复：所有用户数据彻底统一——固定全员连接同一主节点（之前连接竞速导致不同设备看到不同商品列表），主节点故障自动切换备用并在恢复后切回'},
+  {v:'v5.41',d:'11-25',cur:true,t:'连接徽标显示版本与节点（右上角「已连接 · v5.41」可核对设备是否最新版）；商品补种提速（5 秒）、备用节点 30 秒自动切回主节点，多设备数据更快一致'},
   {v:'v5.9.6',d:'11-20',t:'移除视频上传功能，上传只支持图片（最多 4 张），历史商品中的视频不再展示'},
   {v:'v5.9.5',d:'11-20',t:'频道导航平铺到首页（闲鱼样式）：一行排序/筛选频道 + 一排图标分类频道，点右侧箭头打开全部频道弹窗'},
   {v:'v5.9.4',d:'11-20',t:'首页搜索框新增下拉筛选频道面板：推荐/最新发布/热门商品排序，支持面交/可议价筛选，11 个商品大类一键筛选；首页标题改为「闲鹅校园二手APP」'},
