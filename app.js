@@ -424,6 +424,8 @@ function onMqMsg(topic,payload){
       }
       return;
     }
+    /* 系统通知内容去重：同一订单 3 分钟内的相同通知（retained 重放/重复下单）只保留一条 */
+    if(data.sys&&log.some(m=>m.sys&&m.text===data.text&&Math.abs(m.ts-data.ts)<180000))return;
     log.push(data);log.sort((a,b)=>a.ts-b.ts);
     const replay=Date.now()<chatSyncUntil;
     const inThread=state.view==='chat'&&state.currentThread===tKey;
@@ -1652,7 +1654,8 @@ function placeOrder(p,mode='self',address=''){
     if(mq&&mq.connected){mq.publish(ct,cp,{qos:1,retain:true});mirrorPublish(ct,cp,true);}
     else if(outbox.length<300)outbox.push({topic:ct,payload:cp,retain:true});
     const blog=state.chatLog[threadKey(p.owner,p.id)]=state.chatLog[threadKey(p.owner,p.id)]||[];
-    if(!blog.some(m=>m.ts===sys.ts)){blog.push(sys);blog.sort((a,b)=>a.ts-b.ts);}
+    /* 防重复下单通知：同一订单 3 分钟内的相同通知只保留一条（快速重复下单/刷新不再堆两条） */
+    if(!blog.some(m=>(m.ts===sys.ts)||(m.sys&&m.text===sys.text&&Math.abs(m.ts-sys.ts)<180000))){blog.push(sys);blog.sort((a,b)=>a.ts-b.ts);}
     showView('order');
     showOrderOk();
   }
@@ -1896,21 +1899,16 @@ function peerProduct(peer){
 }
 function renderMsgs(){
   if(!state.me)return;
-  /* 消息列表按联系人聚合：同一人只显示一个卡片（不同商品频道合并，取最近活跃线程），
-     不再出现"同一卖家分裂成多个会话" */
+  /* 每个商品/订单频道独立一行（订单分开显示）；同一频道的重复系统通知已由下单逻辑去重 */
   /* 群聊频道（grp: 开头）不进消息列表，入口在鹅群页 */
-  const byPeer={};
-  Object.entries(state.chatLog)
+  const list=Object.entries(state.chatLog)
     .filter(([key])=>!key.startsWith('grp:'))
-    .forEach(([key,log])=>{
+    .map(([key,log])=>{
       const th=parseThread(key);
-      const lg=log.filter(m=>m.revoked||m.text||m.img);
-      if(!lg.length)return;
-      const lt=lg[lg.length-1].ts;
-      if(!byPeer[th.peer]||lt>byPeer[th.peer].lt)byPeer[th.peer]={peer:th.peer,key,pid:th.pid,log:lg,lt};
-    });
-  const list=Object.values(byPeer)
-    .sort((a,b)=>b.lt-a.lt);
+      return {key,peer:th.peer,pid:th.pid,log:log.filter(m=>m.revoked||m.text||m.img)};
+    })
+    .filter(x=>x.log.length)
+    .sort((a,b)=>b.log[b.log.length-1].ts-a.log[a.log.length-1].ts);
   $('#msgList').innerHTML=list.length?list.map(({key,peer,pid,log})=>{
     const last=log[log.length-1];
     const prevImg=last.img?(last.img.indexOf('stk#')===0?'[表情包] ':'[图片] '):'';
@@ -1919,8 +1917,7 @@ function renderMsgs(){
     const o=state.orders.find(x=>(!pid||x.productId===pid)&&((x.buyer===state.me.name&&x.seller===peer)||(x.seller===state.me.name&&x.buyer===peer)));
     const usePid=pid||(o&&o.productId)||state.chatProducts[peer];
     const p=usePid?state.products.find(x=>x.id===usePid):null;
-    /* 未读合并：该联系人的所有商品频道未读总数 */
-    const un=Object.entries(state.unread).reduce((s,[k,v])=>{try{return s+(parseThread(k).peer===peer?v:0);}catch(e){return s;}},0);
+    const un=state.unread[key]||0;
     return `<div class="card msg-row" data-peer="${peer}" data-pid="${pid||''}">
       ${avFor(peer)}
       <div class="m-main">
@@ -2147,9 +2144,9 @@ $('#goMigrate').addEventListener('click',async()=>{
   }catch(e){migrating=false;toast('迁移失败，请重试');}
 });
 /* ---------- 版本公告 ---------- */
-const APP_VERSION='v5.43';
+const APP_VERSION='v5.45';
 const CHANGELOG=[
-  {v:'v5.43',d:'11-25',cur:true,t:'消息列表按联系人合并（同一人不再分裂成多个会话）；聊天消息升级 QoS1 保障送达不再延迟丢失；切回前台 2 秒内恢复收消息'},
+  {v:'v5.45',d:'11-25',cur:true,t:'消息列表恢复按订单分开显示（每个订单/商品独立会话）；下单通知不再重复、不再串到别的订单频道；组件加载源换国内节点，手机端打开更快'},
   {v:'v5.9.6',d:'11-20',t:'移除视频上传功能，上传只支持图片（最多 4 张），历史商品中的视频不再展示'},
   {v:'v5.9.5',d:'11-20',t:'频道导航平铺到首页（闲鱼样式）：一行排序/筛选频道 + 一排图标分类频道，点右侧箭头打开全部频道弹窗'},
   {v:'v5.9.4',d:'11-20',t:'首页搜索框新增下拉筛选频道面板：推荐/最新发布/热门商品排序，支持面交/可议价筛选，11 个商品大类一键筛选；首页标题改为「闲鹅校园二手APP」'},
@@ -3024,7 +3021,7 @@ function renderOrder(){
   let mainBtn='';
   if(isBuyer){
     mainBtn=o.status===0?(isDelivery?`<div class="btn btn-orange" id="oNext">提醒卖家发货</div>`:`<div class="btn btn-orange" id="oNext">提醒卖家确认地点</div>`)
-      :o.status===1?(isDelivery?`<div class="btn btn-orange" id="oNext">等待收货</div>`:`<div class="btn btn-orange" id="oNext">前往面交</div>`)
+      :o.status===1?(isDelivery?`<div class="btn btn-orange" id="oNext">确认收货</div>`:`<div class="btn btn-orange" id="oNext">前往面交</div>`)
       :o.status===2?`<div class="btn btn-orange" id="oNext">确认${isDelivery?'收货':'交易完成'}</div>`
       :`<div class="btn btn-orange" id="oNext">评价本次交易</div>`;
   }else{
@@ -3045,7 +3042,11 @@ function renderOrder(){
     }
     if(o.status===0)toast(isDelivery?'已提醒卖家发货 📮':'已提醒卖家确认面交地点 📮');
     else if(o.status===1){
-      if(isDelivery)toast('卖家配送中，收货时当面验货再确认');
+      /* 买家拿到货直接点「确认收货」→ 进入下一流程：扫码支付并结束订单 */
+      if(isDelivery){
+        setOrderStatus(o,3);
+        toast('已确认收货 ✅ 请点下方「查看卖家收款码」扫码支付完成交易');
+      }
       else showView('station');
     }
     else if(o.status===2)setOrderStatus(o,3);
