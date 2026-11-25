@@ -74,7 +74,14 @@ function saveProdsCache(){
 }
 let prodsSaveT=null;
 function saveProdsSoon(){clearTimeout(prodsSaveT);prodsSaveT=setTimeout(saveProdsCache,900);}
-(function(){const c=getStore('prods');if(c&&Array.isArray(c)&&c.length)state.products=c.slice();})();
+/* 启动恢复商品缓存：不依赖后面才定义的 getStore（避免 TDZ 崩溃白屏），并防缓存损坏 */
+(function(){
+  try{
+    const v=localStorage.getItem('cu_prods');
+    const c=v?JSON.parse(v):null;
+    if(c&&Array.isArray(c)&&c.length)state.products=c.slice();
+  }catch(e){}
+})();
 
 /* ---------- 工具 ---------- */
 let toastTimer;
