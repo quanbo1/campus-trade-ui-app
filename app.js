@@ -65,15 +65,21 @@ const state={
 /* ---------- 商品本地持久缓存：云端总线保留消息可能被公共 broker 清理，本机缓存即最后备份 ----------
    启动时先从缓存恢复（页面秒开商品），云端消息到齐后合并；缓存有而云端丢失的商品由自愈补种回总线 */
 function saveProdsCache(){
-  try{setStore('prods_m2',state.products.slice(-60));}
+  const arr=()=>state.products.slice(-60);
+  try{setStore('prods_m2',arr());}
   catch(e){
-    /* 容量不足：去掉 base64 图片再存（保商品文字信息，图可从云端/重新上传恢复） */
+    /* 容量不足第一阶段：只剥附加图（imgs），保留主图 img */
     try{
-      const slim=state.products.slice(-60).map(p=>Object.assign({},p,{
-        img:(p.img&&p.img.indexOf('data:')===0)?'':(p.img||''),
-        imgs:(p.imgs||[]).map(x=>(x&&x.indexOf('data:')===0)?'':x).filter(Boolean)}));
-      setStore('prods_m2',slim);
-    }catch(e2){}
+      setStore('prods_m2',arr().map(p=>Object.assign({},p,{
+        imgs:(p.imgs||[]).map(x=>(x&&x.indexOf('data:')===0)?'':x).filter(Boolean)})));
+    }catch(e2){
+      /* 第二阶段：主图也保不住，只存文字（图片可从云端/重新上传恢复） */
+      try{
+        setStore('prods_m2',arr().map(p=>Object.assign({},p,{
+          img:(p.img&&p.img.indexOf('data:')===0)?'':(p.img||''),
+          imgs:(p.imgs||[]).map(x=>(x&&x.indexOf('data:')===0)?'':x).filter(Boolean)})));
+      }catch(e3){}
+    }
   }
 }
 let prodsSaveT=null;
@@ -2144,9 +2150,9 @@ $('#goMigrate').addEventListener('click',async()=>{
   }catch(e){migrating=false;toast('迁移失败，请重试');}
 });
 /* ---------- 版本公告 ---------- */
-const APP_VERSION='v5.45';
+const APP_VERSION='v5.46';
 const CHANGELOG=[
-  {v:'v5.45',d:'11-25',cur:true,t:'消息列表恢复按订单分开显示（每个订单/商品独立会话）；下单通知不再重复、不再串到别的订单频道；组件加载源换国内节点，手机端打开更快'},
+  {v:'v5.46',d:'11-26',cur:true,t:'交易流程优化：确认后不再跳站点选择页、直接进入验货节点；收款码提前到验货时展示（先扫码付款再确认完成）；本地缓存图片保全加固'},
   {v:'v5.9.6',d:'11-20',t:'移除视频上传功能，上传只支持图片（最多 4 张），历史商品中的视频不再展示'},
   {v:'v5.9.5',d:'11-20',t:'频道导航平铺到首页（闲鱼样式）：一行排序/筛选频道 + 一排图标分类频道，点右侧箭头打开全部频道弹窗'},
   {v:'v5.9.4',d:'11-20',t:'首页搜索框新增下拉筛选频道面板：推荐/最新发布/热门商品排序，支持面交/可议价筛选，11 个商品大类一键筛选；首页标题改为「闲鹅校园二手APP」'},
@@ -2989,15 +2995,15 @@ function renderOrder(){
     <div class="tc-row" style="border:none;font-size:10px;color:var(--text3);">💡 地点/地址可在聊天窗口协商，改完后在上方保存，双方同步可见</div>
   </div>`;
   const subDesc=isDelivery
-    ?['买家完成支付（含跑腿费），货款暂由平台担保','卖家备好货，送货至买家填写地址','买家收货并检查商品，确认无误','买家已扫码支付，交易完成']
-    :['买家完成支付，货款暂由平台担保','双方在聊天页确认面交地点与时间','当面检查商品，满意后确认完成','买家已扫码支付，货款已转给卖家'];
+    ?['买家完成支付（含跑腿费），货款暂由平台担保','卖家备好货，送货至买家填写地址','买家收货验货，满意后点「查看卖家收款码」扫码付款','买家确认收货，交易完成']
+    :['买家完成支付，货款暂由平台担保','双方在聊天页确认面交地点与时间','当面验货，满意后点「查看卖家收款码」扫码付款','买家确认完成，交易完成'];
   const steps=orderSteps(o).map((t,i)=>{
     const cls=i<o.status?'done':i===o.status?'now':'todo';
     const node=i<o.status?'✓':i===o.status?'●':(i+1);
     return `<div class="step ${cls}"><div class="snode">${node}</div><div class="sinfo"><b>${t}</b><span>${subDesc[i]}</span></div></div>`;
   }).join('');
-  /* 验货确认完成后（节点3确认 → status 3），买家端把小提示换成查看卖家收款码 */
-  const qrEntry=(isBuyer&&o.status>=3)
+  /* 进入验货节点（status>=2）买家端即显示「查看卖家收款码」：先付款再确认完成 */
+  const qrEntry=(isBuyer&&o.status>=2)
     ?`<div class="btn btn-orange" id="oQrBtn" style="width:100%;">💳 查看卖家收款码</div>`
     :`<div class="order-tip">💡 小提示：${isDelivery?'买家请保持手机畅通，收货时当面检查商品再确认；有问题可发起客服仲裁。':'地点可随时在聊天中协商调整；现场验货满意后再确认完成，有问题可当场发起退款。'}</div>`;
   box.innerHTML=head+tradeCard+`<div class="card steps">${steps}</div>`+qrEntry;
@@ -3044,12 +3050,20 @@ function renderOrder(){
     else if(o.status===1){
       /* 买家拿到货直接点「确认收货」→ 进入下一流程：扫码支付并结束订单 */
       if(isDelivery){
-        setOrderStatus(o,3);
-        toast('已确认收货 ✅ 请点下方「查看卖家收款码」扫码支付完成交易');
+        /* 确认到货 → 进入验货节点（节点3）：先验货、扫码付款，再点「确认收货」完成交易 */
+        setOrderStatus(o,2);
+        toast('已确认到货 ✅ 请验货后点「查看卖家收款码」扫码支付，再确认完成交易');
       }
-      else showView('station');
+      else{
+        /* 不再跳站点选择页：确认后直接进入验货节点（节点3），验货满意扫码付款 */
+        setOrderStatus(o,2);
+        toast('已确认 ✅ 请双方到场验货，满意后扫码付款并确认完成');
+      }
     }
-    else if(o.status===2)setOrderStatus(o,3);
+    else if(o.status===2){
+      setOrderStatus(o,3);
+      toast('交易完成 🎉');
+    }
     else toast('感谢你的评价，大学生活因你更美好 ✨');
   });
   const gc=box.querySelector('[data-pid]');
